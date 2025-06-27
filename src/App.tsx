@@ -36,10 +36,9 @@ const router = createBrowserRouter([
       {
         element: <Layout />,
         children: [
-          { path: '/dashboard', element: <DashboardPage /> },
+          { path: '/dashboard', element: <ProgressDashboardPage /> },
           { path: '/workout/all', element: <WorkoutsPage /> },
           { path: '/workout/new', element: <CreateWorkoutPage /> },
-          { path: '/user/progress', element: <ProgressDashboardPage /> },
           { path: '/workout/:planId', element: <PlanDetailPage /> },
           { path: '/workout/history', element: <CompletedWorkoutsListPage /> },
           { path: '/workout/history/:sessionId', element: <CompletedWorkoutDetailPage /> },

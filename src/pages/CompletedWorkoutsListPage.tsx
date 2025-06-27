@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase';
-import { useAuth } from '../context/AuthContext';
 import { CalendarDaysIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
+
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
+import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/ui/PageHeader';
 import { DocumentData } from 'firebase/firestore';
+import Spinner from '../components/ui/Spinner';
 
 export default function CompletedWorkoutsListPage() {
   const { user } = useAuth();
@@ -29,13 +31,7 @@ export default function CompletedWorkoutsListPage() {
       setLoading(true);
       setError(null);
 
-      const getHistory = httpsCallable(functions, 'getWorkoutHistory');
-      const result = await getHistory({
-        limit: 20,
-        startAfter: startAfter || null
-      });
-
-      const data = result.data as any;
+      const data = await cloudFunctionsService.getWorkoutHistory(20, startAfter);
       
       if (startAfter) {
         // Append to existing sessions
@@ -77,7 +73,7 @@ export default function CompletedWorkoutsListPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <Spinner size="xl" color="primary" className="mx-auto" />
           <p className="mt-4 text-gray-600">Loading history...</p>
         </div>
       </div>

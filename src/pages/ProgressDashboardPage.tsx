@@ -17,6 +17,8 @@ import ProgressDashboard from '../components/ProgressDashboard';
 import Card from '../components/ui/Card';
 import { Link } from 'react-router-dom';
 import { DocumentData } from 'firebase/firestore';
+import Spinner from '../components/ui/Spinner';
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -35,6 +37,8 @@ export default function DashboardPage() {
       return;
     }
 
+    console.log("User found, fetching dashboard data...", user);
+    cloudFunctionsService.testFunctionCall();
     fetchDashboardData();
   }, [user]);
 
@@ -81,7 +85,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <Spinner size="xl" color="primary" className="mx-auto" />
           <p className="mt-4 text-gray-600">Loading Dashboard...</p>
         </div>
       </div>

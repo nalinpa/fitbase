@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAuth, signOut } from 'firebase/auth';
+import FloatingWorkoutButton from '../components/WorkoutButton';
 
-// Import Heroicons for a modern icon set
 import {
   ChartBarIcon,
   HomeIcon,
@@ -17,15 +17,12 @@ import {
 
 export default function Layout() {
   const { user } = useAuth();
-  // State to manage the sidebar visibility on mobile
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = () => {
     signOut(getAuth());
-    // No need to navigate here, the router will handle the redirect
   };
-
-  // This function defines the classes for active vs. inactive navigation links
+  
   const navLinkClasses = ({ isActive }: { isActive: boolean }): string => {
     const baseClasses = "flex items-center px-4 py-2 text-gray-700 rounded-lg group";
     const activeClasses = "bg-indigo-100 text-indigo-600";
@@ -38,8 +35,7 @@ export default function Layout() {
     { label: 'Workout Library', icon: FolderIcon, to: '/workout/all' },
     { label: 'History', icon: ChartBarIcon, to: '/workout/history' },
     { label: 'Calendar', icon: CalendarIcon, to: '/workout/calendar' },    
-    { label: 'Create Workout', icon: SparklesIcon, to: '/workout/new' },  
-    { label: 'Progress', icon: SparklesIcon, to: '/user/progress' },
+    { label: 'Create Workout', icon: SparklesIcon, to: '/workout/new' }, 
   ];
 
   const sidebarContent = (
@@ -77,13 +73,11 @@ export default function Layout() {
 
   return (
     <div className="relative min-h-screen md:flex bg-gray-100">
-      {/* Mobile menu overlay */}
       <div
         className={`fixed inset-0 bg-gray-900 bg-opacity-30 z-30 md:hidden ${sidebarOpen ? 'block' : 'hidden'}`}
         onClick={() => setSidebarOpen(false)}
       ></div>
       
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -91,10 +85,8 @@ export default function Layout() {
       >
         {sidebarContent}
       </aside>
-
-      {/* Main Content */}
+      
       <div className="flex-1 flex flex-col">
-        {/* Top bar for mobile view with hamburger menu */}
         <header className="flex items-center justify-between h-16 bg-white shadow-sm md:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -104,11 +96,11 @@ export default function Layout() {
           </button>
           <div className="px-4 font-bold">Fitbase</div>
         </header>
-
-        {/* The actual page content, rendered by the router */}
+        
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
+        <FloatingWorkoutButton />
       </div>
     </div>
   );

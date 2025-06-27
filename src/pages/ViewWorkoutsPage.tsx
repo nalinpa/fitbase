@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { BookOpenIcon, PlusIcon } from '@heroicons/react/24/solid';
-import { functions } from '../firebase';
+import { PlusIcon } from '@heroicons/react/24/solid';
+
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
 import WorkoutPlanList from '../components/WorkoutPlanList';
 import PageHeader from '../components/ui/PageHeader';
 import Button from '../components/ui/Button';
 import { DocumentData } from 'firebase/firestore';
+import Spinner from '../components/ui/Spinner';
 
 export default function WorkoutsPage() {
   const { user, refreshToken } = useAuth();
@@ -32,7 +33,7 @@ export default function WorkoutsPage() {
     return () => clearTimeout(timer);
   }, [user]);
 
-  const fetchWorkouts = async () => {
+const fetchWorkouts = async () => {
     try {
       console.log("Fetching workouts...");
       setLoading(true);
@@ -47,18 +48,8 @@ export default function WorkoutsPage() {
       // Ensure we have a fresh token
       await refreshToken();
       
-      const getLibrary = httpsCallable(functions, 'getWorkoutLibrary');
-      console.log("Calling getWorkoutLibrary function...");
-      
-      const result = await getLibrary();
-      console.log("Function call successful, result:", result);
-      
-      if (!result.data) {
-        throw new Error('No data returned from function');
-      }
-      
-      const data = result.data as any;
-      console.log("Parsed data:", data);
+      const data = await cloudFunctionsService.getWorkoutLibrary();
+      console.log("Function call successful, data:", data);
 
       setCommonWorkouts(data.commonWorkouts || []);
       setCustomWorkouts(data.customWorkouts || []);
@@ -87,9 +78,7 @@ export default function WorkoutsPage() {
           console.log("Attempting token refresh and retry...");
           await refreshToken();
           // Retry the function call once
-          const getLibrary = httpsCallable(functions, 'getWorkoutLibrary');
-          const result = await getLibrary();
-          const data = result.data as any;
+          const data = await cloudFunctionsService.getWorkoutLibrary();
           
           setCommonWorkouts(data.commonWorkouts || []);
           setCustomWorkouts(data.customWorkouts || []);
@@ -117,8 +106,7 @@ export default function WorkoutsPage() {
       // Ensure fresh token before making the call
       await refreshToken();
       
-      const selectPlan = httpsCallable(functions, 'selectWorkoutPlan');
-      await selectPlan({ planId });
+      await cloudFunctionsService.selectWorkoutPlan(planId);
       
       // Update local state
       setActivePlanId(planId);
@@ -140,7 +128,7 @@ export default function WorkoutsPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <Spinner size="xl" color="primary" className="mx-auto" />
           <p className="mt-4 text-gray-600">Loading Workout Library...</p>
         </div>
       </div>
@@ -173,7 +161,6 @@ export default function WorkoutsPage() {
         </button>
         <button 
           onClick={() => {
-            // Force token refresh and retry
             refreshToken().then(() => fetchWorkouts());
           }}
           className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"

@@ -1,15 +1,14 @@
-// src/pages/CalendarViewPage.tsx - Refactored to use Cloud Functions
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase';
-import { useAuth } from '../context/AuthContext';
 import { Calendar, dateFnsLocalizer, View, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay, startOfMonth, endOfMonth, addMonths } from 'date-fns';
 import { enUS } from 'date-fns/locale';
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
+import { useAuth } from '../context/AuthContext';
 import CalendarToolbar from '../components/CalendarToolbar';
 import PageHeader from '../components/ui/PageHeader';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import Spinner from '../components/ui/Spinner';
 
 const locales = { 'en-US': enUS };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
@@ -29,7 +28,6 @@ export default function CalendarViewPage() {
       setLoading(false);
       return;
     }
-
     fetchCalendarData();
   }, [user, date]);
 
@@ -37,28 +35,17 @@ export default function CalendarViewPage() {
     try {
       setLoading(true);
       setError(null);
-
-      // Calculate date range based on current view
       const start = startOfMonth(addMonths(date, -1));
       const end = endOfMonth(addMonths(date, 1));
-      console.log(start, end);
-
-      const getCalendar = httpsCallable(functions, 'getCalendarData');
-      const result = await getCalendar({
-        startDate: start.toISOString(),
-        endDate: end.toISOString()
-      });
-
-      const data = result.data as any;
+      const data = await cloudFunctionsService.getCalendarData(start.toISOString(), end.toISOString());
       
-      // Transform events for react-big-calendar
       const calendarEvents = data.events.map((event: any) => ({
         id: event.id,
         title: event.title,
         start: new Date(event.date),
         end: new Date(event.date),
         allDay: true,
-        resource: event // Store original data for onClick
+        resource: event
       }));
 
       setEvents(calendarEvents);
@@ -82,7 +69,7 @@ export default function CalendarViewPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <Spinner size="xl" color="primary" className="mx-auto" />
           <p className="mt-4 text-gray-600">Loading Calendar...</p>
         </div>
       </div>
@@ -93,10 +80,7 @@ export default function CalendarViewPage() {
     return (
       <div className="text-center py-12">
         <p className="text-red-600">{error}</p>
-        <button 
-          onClick={fetchCalendarData}
-          className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
+        <button onClick={fetchCalendarData} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
           Retry
         </button>
       </div>
@@ -107,7 +91,7 @@ export default function CalendarViewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Workout Calendar"
-        subtitle="A visual overview of your completed workout sessions."
+        subtitle="Your completed workout sessions."
       />
       
       <div className="bg-white rounded-lg shadow-md">
@@ -133,7 +117,6 @@ export default function CalendarViewPage() {
         </div>
       </div>
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-lg shadow-md text-center">
           <p className="text-sm text-gray-600">This Month</p>

@@ -1,28 +1,19 @@
 import React, { useState, FormEvent, useEffect } from 'react';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { isAxiosError } from 'axios';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { useLocation, useNavigate } from 'react-router-dom'; 
-
-import apiClient from '../lib/axios';
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
 import Button from './ui/Button';
+import Spinner from './ui/Spinner';
 
-const CREATE_USER_ENDPOINT = "/createUser";
-
-interface ErrorResponse { error: string; }
-
-const Spinner = () => (
-  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-  </svg>
-);
 
 function Auth() {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [isLogin, setIsLogin] = useState<boolean>(true);
+  const [showForgotPassword, setShowForgotPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
 
   const navigate = useNavigate(); 
@@ -35,11 +26,15 @@ function Auth() {
     } else {
       setIsLogin(true);
     }
+    setShowForgotPassword(false);
+    setError('');
+    setSuccess('');
   }, [location.pathname]);
 
   const handleAuth = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
@@ -48,77 +43,143 @@ function Auth() {
         await signInWithEmailAndPassword(auth, email, password);
         navigate('/dashboard');
       } else {
-        // First create user in our backend (this creates the Firestore document)
+        // Use Cloud Function to create user
         try {
-          await apiClient.post(CREATE_USER_ENDPOINT, { email, password });
+          await cloudFunctionsService.createUser(email, password);
           
           // Then sign them in with Firebase Auth
           await signInWithEmailAndPassword(auth, email, password);
           navigate('/dashboard');
         } catch (backendError: any) {
-          if (isAxiosError(backendError)) {
-            throw new Error(backendError.response?.data?.error || 'Failed to create account');
+          console.error("Cloud Function error:", backendError);
+          
+          // Handle Cloud Function specific errors
+          if (backendError.code) {
+            switch (backendError.code) {
+              case 'already-exists':
+              case 'auth/email-already-exists':
+                setError('Email is already registered');
+                break;
+              case 'invalid-argument':
+                setError(backendError.message || 'Invalid email or password format');
+                break;
+              case 'unauthenticated':
+                setError('Authentication failed');
+                break;
+              default:
+                setError(backendError.message || 'Failed to create account');
+            }
+          } else {
+            setError(backendError.message || 'Failed to create account');
           }
-          throw backendError;
+          throw backendError; // Re-throw to prevent further execution
         }
       }
     } catch (err: any) {
       console.error("Auth error:", err);
       
-      // Handle Firebase Auth errors
-      switch (err.code) {
-        case 'auth/invalid-email':
-          setError('Invalid email address');
-          break;
-        case 'auth/user-disabled':
-          setError('This account has been disabled');
-          break;
-        case 'auth/user-not-found':
-          setError('No account found with this email');
-          break;
-        case 'auth/wrong-password':
-          setError('Incorrect password');
-          break;
-        case 'auth/email-already-in-use':
-          setError('Email is already registered');
-          break;
-        case 'auth/weak-password':
-          setError('Password should be at least 6 characters');
-          break;
-        case 'auth/network-request-failed':
-          setError('Network error. Please check your connection');
-          break;
-        default:
-          setError(err.message || 'An error occurred. Please try again.');
+      // Only handle Firebase Auth errors if we haven't already set an error from Cloud Functions
+      if (!error) {
+        switch (err.code) {
+          case 'auth/invalid-email':
+            setError('Invalid email address');
+            break;
+          case 'auth/user-disabled':
+            setError('This account has been disabled');
+            break;
+          case 'auth/user-not-found':
+            setError('No account found with this email');
+            break;
+          case 'auth/wrong-password':
+            setError('Incorrect password');
+            break;
+          case 'auth/email-already-in-use':
+            setError('Email is already registered');
+            break;
+          case 'auth/weak-password':
+            setError('Password should be at least 6 characters');
+            break;
+          case 'auth/network-request-failed':
+            setError('Network error. Please check your connection');
+            break;
+          default:
+            if (!error) { // Only set if we haven't already set an error
+              setError(err.message || 'An error occurred. Please try again.');
+            }
+        }
       }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleForgotPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
+    try {
+      await cloudFunctionsService.initiatePasswordReset(email);
+      setSuccess('Password reset email sent! Check your inbox.');
+      setShowForgotPassword(false);
+    } catch (err: any) {
+      console.error("Password reset error:", err);
+      
+      if (err.code === 'not-found') {
+        setError('No account found with this email address');
+      } else if (err.code === 'invalid-argument') {
+        setError('Please enter a valid email address');
+      } else {
+        setError(err.message || 'Failed to send password reset email');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setEmail('');
+    setPassword('');
+    setError('');
+    setSuccess('');
+    setShowForgotPassword(false);
+  };
+
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-md px-4">
       <div className="w-full text-center">
         <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-          {isLogin ? 'Sign in to your account' : 'Create a new account'}
+          {showForgotPassword ? 'Reset your password' : 
+           isLogin ? 'Sign in to your account' : 'Create a new account'}
         </h2>
-        <p className="mt-2 text-sm text-gray-600">
-          Or{' '}
-          <button 
-            onClick={() => navigate(isLogin ? '/register' : '/login')} 
-            className="font-medium text-indigo-600 hover:text-indigo-500"
-          >
-            {isLogin ? 'create an account' : 'sign in instead'}
-          </button>
-        </p>
+        {!showForgotPassword && (
+          <p className="mt-2 text-sm text-gray-600">
+            Or{' '}
+            <button 
+              onClick={() => {
+                navigate(isLogin ? '/register' : '/login');
+                resetForm();
+              }} 
+              className="font-medium text-indigo-600 hover:text-indigo-500"
+            >
+              {isLogin ? 'create an account' : 'sign in instead'}
+            </button>
+          </p>
+        )}
       </div>
 
-      {/* Form Card */}
       <div className="w-full p-8 mt-8 space-y-6 bg-white rounded-lg shadow-md">
-        <form className="space-y-6" onSubmit={handleAuth}>
+        <form className="space-y-6" onSubmit={showForgotPassword ? handleForgotPassword : handleAuth}>
           {error && (
             <div className="p-3 text-sm text-red-700 bg-red-100 border border-red-300 rounded-md">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="p-3 text-sm text-green-700 bg-green-100 border border-green-300 rounded-md">
+              {success}
             </div>
           )}
 
@@ -142,25 +203,27 @@ function Auth() {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete={isLogin ? "current-password" : "new-password"}
-                  required
-                  minLength={6}
-                  className="w-full px-3 py-2 placeholder-gray-400 border border-gray-300 rounded-md shadow-sm appearance-none focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder={isLogin ? "Enter your password" : "Choose a password (min 6 characters)"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+            {!showForgotPassword && (
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete={isLogin ? "current-password" : "new-password"}
+                    required
+                    minLength={6}
+                    className="w-full px-3 py-2 placeholder-gray-400 border border-gray-300 rounded-md shadow-sm appearance-none focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder={isLogin ? "Enter your password" : "Choose a password (min 6 characters)"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div>
@@ -171,11 +234,38 @@ function Auth() {
             >
               {loading && (
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Spinner />
+                  <Spinner size="lg" color="white" />
                 </span>
               )}
-              {isLogin ? 'Sign In' : 'Create Account'}
+              {showForgotPassword ? 'Send Reset Email' : 
+               isLogin ? 'Sign In' : 'Create Account'}
             </Button>
+          </div>
+
+          {/* Forgot Password and Back Links */}
+          <div className="text-center">
+            {isLogin && !showForgotPassword && (
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-sm text-indigo-600 hover:text-indigo-500"
+              >
+                Forgot your password?
+                </button>
+            )}
+            {showForgotPassword && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setError('');
+                  setSuccess('');
+                }}
+                className="text-sm text-indigo-600 hover:text-indigo-500"
+              >
+                Back to sign in
+              </button>
+            )}
           </div>
         </form>
       </div>

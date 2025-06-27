@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { 
-  doc, onSnapshot, DocumentData, addDoc, collection, serverTimestamp, 
-  query, where, orderBy, limit, getDocs
-} from 'firebase/firestore';
-import { PlayCircleIcon, BookOpenIcon, ArrowRightIcon } from '@heroicons/react/24/solid';
+import { useNavigate } from 'react-router-dom';
 
-import { db } from '../firebase';
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
 import NextWorkoutCard from '../components/NextWorkoutCard';
 import PlanOverviewCard from '../components/PlanOverviewCard';
 import NoActivePlanPrompt from '../components/NoActivePlanPrompt';
+import { DocumentData } from 'firebase/firestore';
+import Spinner from '../components/ui/Spinner';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -18,40 +15,39 @@ export default function DashboardPage() {
   
   const [userData, setUserData] = useState<DocumentData | null>(null);
   const [activePlan, setActivePlan] = useState<DocumentData | null>(null);
+  const [recentWorkouts, setRecentWorkouts] = useState<DocumentData[]>([]);
+  const [nextWorkout, setNextWorkout] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
+  const [error, setError] = useState<string | null>(null);
+
+
   useEffect(() => {
-    if (!user) { setLoading(false); return; }
-    
-    const userDocRef = doc(db, 'users', user.uid);
-    const userUnsubscribe = onSnapshot(userDocRef, (userDoc) => {
-      if (userDoc.exists()) {
-        const uData = userDoc.data();
-        setUserData(uData);
-        const planId = uData.activeWorkoutPlanId;
-
-        if (planId) {
-          const planDocRef = doc(db, 'workouts', planId);
-          const planUnsubscribe = onSnapshot(planDocRef, (planDoc) => {
-            if (planDoc.exists()) {
-              setActivePlan({ id: planDoc.id, ...planDoc.data() });
-            } else {
-              setActivePlan(null);
-            }
-            setLoading(false);
-          });
-          return planUnsubscribe;
-        } else {
-          setActivePlan(null);
-          setLoading(false);
-        }
-      } else {
-        setLoading(false);
-      }
-    });
-
-    return () => userUnsubscribe();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    console.log("User found, fetching dashboard data...", user);
+    cloudFunctionsService.testFunctionCall();
+    fetchDashboardData();
+    getNextWorkout();
   }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await cloudFunctionsService.getUserDashboardData();
+      setUserData(data.userData);
+      setActivePlan(data.activePlan);
+      setRecentWorkouts(data.recentWorkouts);
+      setNextWorkout(data.nextWorkout);
+    } catch (error: any) {
+      console.error("Error fetching dashboard data:", error);
+      setError(error.message || "Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const getNextWorkout = () => {
     if (!activePlan || !userData) return null;
@@ -60,72 +56,40 @@ export default function DashboardPage() {
     let nextDayIndex = (lastCompletedIndex === undefined || lastCompletedIndex === null || lastCompletedIndex >= totalDays - 1)
       ? 0
       : lastCompletedIndex + 1;
-    return { day: activePlan.days[nextDayIndex], index: nextDayIndex };
-  };
-
-  const nextWorkout = getNextWorkout();
+    setNextWorkout({ day: activePlan.days[nextDayIndex], index: nextDayIndex });
+  }
 
   const handleStartWorkout = async (dayIndex: number) => {
-    if (!user || !activePlan) return;
-
+    if (!activePlan) return;
     try {
-      // 1. Query for the most recent completed session of this specific workout day
-      const previousSessionQuery = query(
-        collection(db, 'userWorkouts'),
-        where('userId', '==', user.uid),
-        where('planId', '==', activePlan.id),
-        where('dayIndex', '==', dayIndex),
-        where('status', '==', 'completed'),
-        orderBy('dateCompleted', 'desc'),
-        limit(1)
-      );
-      
-      const querySnapshot = await getDocs(previousSessionQuery);
-      const lastSessionData = querySnapshot.empty ? null : querySnapshot.docs[0].data();
-
-      // 2. Build the exercises array for the new session
-      const newExercises = activePlan.days[dayIndex].exercises.map((planExercise: any) => {
-        // Find the matching exercise from the last session, if it exists
-        const lastExercisePerformance = lastSessionData?.exercises.find(
-          (lastEx: any) => lastEx.exerciseName === planExercise.exerciseName
-        );
-        
-        // Create the empty performance slots for the new session
-        const newPerformance = Array(planExercise.sets).fill(null).map((_, setIndex) => {
-          const lastWeight = lastExercisePerformance?.performance[setIndex]?.weight || '0';
-          return { weight: lastWeight, reps: '', completed: false };
-        });
-
-        return {
-          ...planExercise,
-          performance: newPerformance,
-        };
-      });
-
-      // 3. Create the new session document with pre-populated weights
-      const newSessionData = {
-        userId: user.uid,
-        planId: activePlan.id,
-        planName: activePlan.planName,
-        dayIndex: dayIndex,
-        dayName: activePlan.days[dayIndex].dayName,
-        dateStarted: serverTimestamp(),
-        status: 'in_progress',
-        exercises: newExercises, // Use the newly constructed exercises array
-      };
-      
-      const docRef = await addDoc(collection(db, 'userWorkouts'), newSessionData);
-      
-      // 4. Navigate to the live session page
-      navigate(`/session/${docRef.id}`);
-
-    } catch (error) {
-      console.error("Error starting workout session:", error);
+      const data = await cloudFunctionsService.startWorkoutSession(activePlan.id, dayIndex);
+      navigate(`/session/${data.sessionId}`);
+    } catch (error: any) {
+      console.error("Error starting workout:", error);
+      alert(error.message || "Failed to start workout session");
     }
   };
   
   if (loading) {
-    return <div>Loading Dashboard...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Spinner size="xl" color="primary" className="mx-auto" />
+          <p className="mt-4 text-gray-600">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600">{error}</p>
+        <button onClick={fetchDashboardData} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (

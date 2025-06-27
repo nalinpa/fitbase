@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getCountFromServer } from 'firebase/firestore'; 
-import { httpsCallable, HttpsCallableResult } from '@firebase/functions';
 import { useNavigate } from 'react-router-dom';
-
-import { db, functions } from '../firebase';
+import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
 import EditableWorkoutDays from './EditWorkoutDay';
 import Button from './ui/Button';
-import { getAuth } from 'firebase/auth';
 
 interface Exercise {
   exerciseName: string;
@@ -22,31 +18,30 @@ interface WorkoutDay {
   exercises: Exercise[];
 }
 
-// Helper functions to create default states
 const defaultExercise = (): Exercise => ({ exerciseName: '', sets: 3, reps: '8-12', weight: '0', restTime: 60 });
 const defaultDay = (dayNumber: number): WorkoutDay => ({ dayName: `Day ${dayNumber}`, notes: '', exercises: [defaultExercise()] });
 
-
 export default function CreateWorkoutForm() {
   const { user } = useAuth();
-    const navigate = useNavigate();
+  const navigate = useNavigate();
   
-  // State for the form's data and status
   const [description, setDescription] = useState('');
   const [days, setDays] = useState<WorkoutDay[]>([defaultDay(1)]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [customWorkoutCount, setCustomWorkoutCount] = useState(0);
-  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     if (!user) return;
-    const getWorkoutCount = async () => {
-      const q = query(collection(db, "workouts"), where("createdBy", "==", user.uid), where("type", "==", "custom"));
-      const snapshot = await getCountFromServer(q);
-      setCustomWorkoutCount(snapshot.data().count);
+    const fetchWorkoutCount = async () => {
+      try {
+        const data = await cloudFunctionsService.getWorkoutLibrary();
+        setCustomWorkoutCount(data.customWorkouts.length);
+      } catch (error) {
+        console.error("Error fetching workout count:", error);
+      }
     };
-    getWorkoutCount();
+    fetchWorkoutCount();
   }, [user]);
 
   const handleNumberOfDaysChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -85,14 +80,11 @@ export default function CreateWorkoutForm() {
     setDays(updatedDays);
   };
 
-   const handleSubmit = async (e: React.FormEvent) => {
-    console.log("Submit button clicked");
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
     setErrorMessage('');
-    setSuccessMessage('');
 
-    console.log(user);
     if (!user) {
       setErrorMessage('You must be logged in to create a plan.');
       setStatus('error');
@@ -100,48 +92,14 @@ export default function CreateWorkoutForm() {
     }
 
     try {
-      // 1. Get a reference to our Cloud Function by its name
-      const createWorkoutPlanFn = httpsCallable(functions, 'createWorkoutPlan');
-      console.log(createWorkoutPlanFn);
-
-      // 2. Prepare the data payload to send to the function
-      const dataToSend = {
-        description,
-        numberOfDays: days.length,
-        days,
-      };
-      console.log(dataToSend);
-      
-      // 3. Call the function and wait for the result
-      //const result: HttpsCallableResult<any> = 
-      await createWorkoutPlanFn(dataToSend);
-      //console.log(result);
-
-      // 4. Handle a successful response from the function
+      await cloudFunctionsService.createWorkoutPlan(description, days.length, days);
       setStatus('success');
-      // Use the planName returned by the function in the success message
-      setSuccessMessage(`Successfully created`);
-
-       const auth = getAuth();
-       console.log(auth.currentUser);
-      if (!auth.currentUser) {
-        // If there's no user, stop immediately and show an error.
-        console.error("Function call stopped: No authenticated user found.");
-        setErrorMessage("You are not logged in. Please refresh the page and try again.");
-        setStatus('error');
-        return;
-      }
-      
-      // Reset form fields
-      navigate('/dashboard');
       setDescription('');
       setDays([defaultDay(1)]);
-      setTimeout(() => setStatus('idle'), 4000); 
-
-    } catch (err: any) {
-      // 5. Handle any errors returned by the function
-      console.error("Error calling createWorkoutPlan function:", err);
-      setErrorMessage(err.message || 'Failed to save workout plan.');
+      setTimeout(() => navigate('/dashboard'), 1000);
+    } catch (error: any) {
+      console.error("Error calling createWorkoutPlan function:", error);
+      setErrorMessage(error.message || 'Failed to save workout plan.');
       setStatus('error');
     }
   };
@@ -180,15 +138,14 @@ export default function CreateWorkoutForm() {
         onRemoveExercise={removeExercise}
       />
       
-      {/* Submission and Status Section */}
       <div className="flex items-center justify-between pt-6 border-t">
-          <Button 
-              type="submit"
-              disabled={status === 'loading' || customWorkoutCount >= 5}
-              className="inline-flex items-center gap-2 px-6 py-2 font-semibold text-white bg-indigo-600 rounded-md shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed"
-            >
-              {status === 'loading' ? 'Saving Plan...' : 'Save Custom Plan'}
-            </Button>
+        <Button 
+          type="submit"
+          disabled={status === 'loading' || customWorkoutCount >= 5}
+          className="inline-flex items-center gap-2 px-6 py-2 font-semibold text-white bg-indigo-600 rounded-md shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed"
+        >
+          {status === 'loading' ? 'Saving Plan...' : 'Save Custom Plan'}
+        </Button>
         {status === 'success' && <p className="text-sm font-medium text-green-600">Plan saved successfully!</p>}
         {status === 'error' && <p className="text-sm font-medium text-red-600">{errorMessage}</p>}
       </div>

@@ -1,10 +1,11 @@
 import {onCall, HttpsError, onRequest} from "firebase-functions/v2/https";
-import {FieldValue, Timestamp} from "firebase-admin/firestore";
+import {FieldValue, Timestamp, UpdateData} from "firebase-admin/firestore";
 import {setGlobalOptions} from "firebase-functions/v2";
+
+import { getAuth } from 'firebase-admin/auth';
 import {logger} from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as bcrypt from "bcrypt";
-import cors from "cors";
 
 setGlobalOptions({
   maxInstances: 10,
@@ -15,13 +16,6 @@ setGlobalOptions({
 admin.initializeApp();
 
 // Initialize
-const corsHandler = cors({
-  origin: true,
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-});
-
 let db: admin.firestore.Firestore;
 const saltRounds = 10;
 
@@ -75,140 +69,238 @@ interface ActivePlan {
   days?: LoggedExercise[];
 }
 
+interface UserProfileUpdate {
+  displayName?: string;
+  weightUnit?: string;
+  timezone?: string;
+  updatedAt?: FirebaseFirestore.FieldValue;
+}
+
 // ==================== AUTH FUNCTIONS ====================
-export const createUser = onRequest( {
+export const createUser = onCall({
   cors: [
     "http://localhost:3000",
     "http://localhost:3001",
     "https://fitbase-60cab.firebaseapp.com",
     "https://fitbase-60cab.web.app",
   ],
-},
-async (req, res) => {
-  corsHandler(req, res, async () => {
-    try {
-      initializeDb();
-      const {email, password} = req.body;
+}, async (request) => {
+  try {
+    initializeDb();
+    const {email, password} = request.data;
 
-      if (!email || !password) {
-        res.status(400).send({error: "Email and password are required."});
-        return;
-      }
-
-      // Create user in Firebase Auth
-      const userRecord = await admin.auth().createUser({
-        email: email,
-        password: password,
-        displayName: email.split("@")[0],
-      });
-
-      const userId = userRecord.uid;
-
-      // Hash password for additional security (though Firebase Auth already handles this)
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-      // Create user document
-      const userDocData = {
-        email: email,
-        hashedPassword: hashedPassword,
-        displayName: email.split("@")[0],
-        createdAt: FieldValue.serverTimestamp(),
-        activeWorkoutPlanId: null,
-        lastCompletedDayIndex: null,
-        totalWorkoutsCompleted: 0,
-        memberSince: FieldValue.serverTimestamp(),
-        weightUnit: "kg",
-        timezone: "UTC",
-        stats: {
-          totalWorkouts: 0,
-          currentStreak: 0,
-          longestStreak: 0,
-          lastWorkoutDate: null,
-          personalRecords: {},
-          volumeByMuscleGroup: {},
-        },
-      };
-
-      await db.collection("users").doc(userId).set(userDocData);
-
-      // Return success without custom token
-      res.status(201).send({
-        success: true,
-        message: "User created successfully. Please sign in.",
-        uid: userId,
-      });
-    } catch (error) {
-      logger.error("Error creating user:", error);
-
-      // Type guard for Firebase Auth errors
-      if (error && typeof error === "object" && "code" in error) {
-        const authError = error as admin.FirebaseError;
-
-        switch (authError.code) {
-        case "auth/email-already-exists":
-          res.status(400).send({error: "Email already in use."});
-          break;
-        case "auth/invalid-email":
-          res.status(400).send({error: "Invalid email address."});
-          break;
-        case "auth/weak-password":
-          res.status(400).send({error: "Password is too weak."});
-          break;
-        default:
-          res.status(500).send({error: "Something went wrong creating user."});
-        }
-      } else {
-        res.status(500).send({error: "Something went wrong creating user."});
-      }
+    if (!email || !password) {
+      throw new HttpsError("invalid-argument", "Email and password are required.");
     }
-  });
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new HttpsError("invalid-argument", "Invalid email address format.");
+    }
+
+    // Basic password validation
+    if (password.length < 6) {
+      throw new HttpsError("invalid-argument", "Password must be at least 6 characters long.");
+    }
+
+    // Create user in Firebase Auth
+    const userRecord = await admin.auth().createUser({
+      email: email,
+      password: password,
+      displayName: email.split("@")[0],
+    });
+
+    const userId = userRecord.uid;
+
+    // Hash password for additional security (though Firebase Auth already handles this)
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Create user document
+    const userDocData = {
+      email: email,
+      hashedPassword: hashedPassword,
+      displayName: email.split("@")[0],
+      createdAt: FieldValue.serverTimestamp(),
+      activeWorkoutPlanId: null,
+      lastCompletedDayIndex: null,
+      totalWorkoutsCompleted: 0,
+      memberSince: FieldValue.serverTimestamp(),
+      weightUnit: "kg",
+      timezone: "UTC",
+      stats: {
+        totalWorkouts: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        lastWorkoutDate: null,
+        personalRecords: {},
+        volumeByMuscleGroup: {},
+      },
+    };
+
+    await db.collection("users").doc(userId).set(userDocData);
+
+    // Return success response
+    return {
+      success: true,
+      message: "User created successfully. Please sign in.",
+      uid: userId,
+    };
+  } catch (error) {
+    logger.error("Error creating user:", error);
+
+    // Type guard for Firebase Auth errors
+    if (error && typeof error === "object" && "code" in error) {
+      const authError = error as admin.FirebaseError;
+
+      switch (authError.code) {
+      case "auth/email-already-exists":
+        throw new HttpsError("already-exists", "Email already in use.");
+      case "auth/invalid-email":
+        throw new HttpsError("invalid-argument", "Invalid email address.");
+      case "auth/weak-password":
+        throw new HttpsError("invalid-argument", "Password is too weak.");
+      default:
+        logger.error("Unexpected Firebase Auth error:", authError);
+        throw new HttpsError("internal", "Something went wrong creating user.");
+      }
+    } else if (error instanceof HttpsError) {
+      // Re-throw HttpsError instances (like our validation errors)
+      throw error;
+    } else {
+      logger.error("Unexpected error:", error);
+      throw new HttpsError("internal", "Something went wrong creating user.");
+    }
+  }
 });
 
-export const verifyUser = onRequest(async (req, res) => {
-  corsHandler(req, res, async () => {
-    try {
-      initializeDb();
-      const {email} = req.body;
+// Update your existing verifyUser function to use onCall instead of onRequest
+export const verifyUser = onCall({
+  cors: [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://fitbase-60cab.firebaseapp.com",
+    "https://fitbase-60cab.web.app",
+  ],
+}, async (request) => {
+  try {
+    initializeDb();
+    const {email} = request.data;
 
-      if (!email) {
-        res.status(400).send({error: "Email is required."});
-        return;
-      }
-
-      // Check if user exists in our database
-      const userQuery = await db
-        .collection("users")
-        .where("email", "==", email)
-        .limit(1)
-        .get();
-
-      if (userQuery.empty) {
-        res.status(404).send({error: "User not found."});
-        return;
-      }
-
-      const userDoc = userQuery.docs[0];
-
-      res.status(200).send({
-        exists: true,
-        uid: userDoc.id,
-      });
-    } catch (error) {
-      logger.error("Error verifying user:", error);
-      res.status(500).send({error: "Something went wrong."});
+    if (!email) {
+      throw new HttpsError("invalid-argument", "Email is required.");
     }
-  });
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new HttpsError("invalid-argument", "Invalid email address format.");
+    }
+
+    // Check if user exists in our database
+    const userQuery = await db
+      .collection("users")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
+    if (userQuery.empty) {
+      throw new HttpsError("not-found", "User not found.");
+    }
+
+    const userDoc = userQuery.docs[0];
+
+    return {
+      exists: true,
+      uid: userDoc.id,
+    };
+  } catch (error) {
+    logger.error("Error verifying user:", error);
+
+    if (error instanceof HttpsError) {
+      throw error;
+    } else {
+      throw new HttpsError("internal", "Something went wrong verifying user.");
+    }
+  }
+});
+
+// Optional: Add a password reset function
+export const initiatePasswordReset = onCall({
+  cors: [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://fitbase-60cab.firebaseapp.com",
+    "https://fitbase-60cab.web.app",
+  ],
+}, async (request) => {
+  try {
+    const {email} = request.data;
+
+    if (!email) {
+      throw new HttpsError("invalid-argument", "Email is required.");
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new HttpsError("invalid-argument", "Invalid email address format.");
+    }
+
+    // Send password reset email
+    await admin.auth().generatePasswordResetLink(email);
+
+    return {
+      success: true,
+      message: "Password reset email sent successfully.",
+    };
+  } catch (error) {
+    logger.error("Error initiating password reset:", error);
+
+    if (error && typeof error === "object" && "code" in error) {
+      const authError = error as admin.FirebaseError;
+
+      switch (authError.code) {
+      case "auth/user-not-found":
+        throw new HttpsError("not-found", "No account found with this email address.");
+      case "auth/invalid-email":
+        throw new HttpsError("invalid-argument", "Invalid email address.");
+      default:
+        throw new HttpsError("internal", "Failed to send password reset email.");
+      }
+    } else {
+      throw new HttpsError("internal", "Failed to send password reset email.");
+    }
+  }
 });
 
 // ==================== USER DATA FUNCTIONS ====================
 
-export const getUserDashboardData = onCall(async (request) => {
+export const getUserDashboardData = onRequest({
+  cors: [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://fitbase-60cab.firebaseapp.com",
+    "https://fitbase-60cab.web.app",
+  ],
+}, 
+async (request, response) => {
+
+  if (request.method === 'OPTIONS') {
+      response.status(204).send('');
+      return;
+    }
   initializeDb();
 
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError("unauthenticated", "You must be logged in.");
-  }
+  const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      response.status(401).json({ error: 'Unauthorized' });
+      return; // ✅ This is fine for early returns
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await getAuth().verifyIdToken(token);
+    const uid = decodedToken.uid;
 
   try {
     // Get user data
@@ -265,18 +357,15 @@ export const getUserDashboardData = onCall(async (request) => {
       };
     }
 
-    return {
-      userData: {
-        ...userData,
-        hashedPassword: undefined, // Never send password to client
-      },
+     response.json({
+      userData: safeUserData,
       activePlan,
       recentWorkouts,
       nextWorkout,
-    };
+    });
   } catch (error) {
     logger.error("Error fetching dashboard data:", error);
-    throw new HttpsError("internal", "Failed to fetch dashboard data.");
+    response.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -722,7 +811,6 @@ export const getWorkoutHistory = onCall(async (request) => {
 });
 
 export const getCalendarData = onCall(async (request) => {
-
   initializeDb();
 
   const uid = request.auth?.uid;
@@ -860,5 +948,343 @@ export const getWorkoutAnalytics = onCall(async (request) => {
   } catch (error) {
     logger.error("Error fetching analytics:", error);
     throw new HttpsError("internal", "Failed to fetch analytics.");
+  }
+});
+
+// ==================== PLAN MANAGEMENT FUNCTIONS ====================
+
+export const updateWorkoutPlan = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {planId, planData} = request.data;
+  if (!planId || !planData) {
+    throw new HttpsError("invalid-argument", "Plan ID and plan data are required.");
+  }
+
+  try {
+    // Verify plan exists and user has permission to edit
+    const planDoc = await db.collection("workouts").doc(planId).get();
+    if (!planDoc.exists) {
+      throw new HttpsError("not-found", "Workout plan not found.");
+    }
+
+    const currentPlan = planDoc.data();
+    if (!currentPlan || (currentPlan.type === "custom" && currentPlan.createdBy !== uid)) {
+      throw new HttpsError("permission-denied", "You don't have permission to edit this plan.");
+    }
+
+    // Update the plan
+    await db.collection("workouts").doc(planId).update({
+      ...planData,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {success: true, message: "Plan updated successfully."};
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error updating workout plan:", error);
+    throw new HttpsError("internal", "Failed to update workout plan.");
+  }
+});
+
+export const deleteWorkoutPlan = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {planId} = request.data;
+  if (!planId) {
+    throw new HttpsError("invalid-argument", "Plan ID is required.");
+  }
+
+  try {
+    // Verify plan exists and user has permission to delete
+    const planDoc = await db.collection("workouts").doc(planId).get();
+    if (!planDoc.exists) {
+      throw new HttpsError("not-found", "Workout plan not found.");
+    }
+
+    const planData = planDoc.data();
+    if (!planData || planData.type !== "custom" || planData.createdBy !== uid) {
+      throw new HttpsError("permission-denied", "You can only delete your own custom plans.");
+    }
+
+    // Check if this plan is currently active for the user
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.data();
+
+    if (userData?.activeWorkoutPlanId === planId) {
+      // Clear the active plan if deleting the currently active plan
+      await db.collection("users").doc(uid).update({
+        activeWorkoutPlanId: null,
+        lastCompletedDayIndex: null,
+      });
+    }
+
+    // Delete the plan
+    await db.collection("workouts").doc(planId).delete();
+
+    return {success: true, message: "Plan deleted successfully."};
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error deleting workout plan:", error);
+    throw new HttpsError("internal", "Failed to delete workout plan.");
+  }
+});
+
+export const getWorkoutPlan = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {planId} = request.data;
+  if (!planId) {
+    throw new HttpsError("invalid-argument", "Plan ID is required.");
+  }
+
+  try {
+    const planDoc = await db.collection("workouts").doc(planId).get();
+    if (!planDoc.exists) {
+      throw new HttpsError("not-found", "Workout plan not found.");
+    }
+
+    const planData = planDoc.data();
+    if (!planData) {
+      throw new HttpsError("not-found", "Workout plan data not found.");
+    }
+
+    // Check if user has access to this plan
+    // Common plans are accessible to everyone, custom plans only to their creator
+    if (planData.type === "custom" && planData.createdBy !== uid) {
+      throw new HttpsError("permission-denied", "You don't have permission to view this plan.");
+    }
+
+    return {
+      id: planDoc.id,
+      ...planData,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error fetching workout plan:", error);
+    throw new HttpsError("internal", "Failed to fetch workout plan.");
+  }
+});
+
+// ==================== SESSION MANAGEMENT FUNCTIONS ====================
+
+export const getWorkoutSession = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {sessionId} = request.data;
+  if (!sessionId) {
+    throw new HttpsError("invalid-argument", "Session ID is required.");
+  }
+
+  try {
+    const sessionDoc = await db.collection("userWorkouts").doc(sessionId).get();
+    if (!sessionDoc.exists) {
+      throw new HttpsError("not-found", "Workout session not found.");
+    }
+
+    const sessionData = sessionDoc.data();
+    if (!sessionData || sessionData.userId !== uid) {
+      throw new HttpsError("permission-denied", "You don't have permission to view this session.");
+    }
+
+    return {
+      id: sessionDoc.id,
+      ...sessionData,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error fetching workout session:", error);
+    throw new HttpsError("internal", "Failed to fetch workout session.");
+  }
+});
+
+export const cancelWorkoutSession = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {sessionId} = request.data;
+  if (!sessionId) {
+    throw new HttpsError("invalid-argument", "Session ID is required.");
+  }
+
+  try {
+    // Verify session ownership
+    const sessionDoc = await db.collection("userWorkouts").doc(sessionId).get();
+    if (!sessionDoc.exists || !sessionDoc.data()) {
+      throw new HttpsError("not-found", "Session not found.");
+    }
+
+    const sessionData = sessionDoc.data();
+    if (!sessionData || sessionData.userId !== uid) {
+      throw new HttpsError("permission-denied", "You don't have permission to cancel this session.");
+    }
+
+    // Update session status to cancelled
+    await db.collection("userWorkouts").doc(sessionId).update({
+      status: "cancelled",
+      dateCancelled: FieldValue.serverTimestamp(),
+    });
+
+    return {success: true, message: "Workout session cancelled."};
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error cancelling workout session:", error);
+    throw new HttpsError("internal", "Failed to cancel workout session.");
+  }
+});
+
+// ==================== USER PROFILE FUNCTIONS ====================
+
+export const updateUserProfile = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const {profileData} = request.data;
+  if (!profileData) {
+    throw new HttpsError("invalid-argument", "Profile data is required.");
+  }
+
+  try {
+    const updateData: UpdateData<UserProfileUpdate> = {};
+
+    // Type-safe field copying
+    if (profileData.displayName !== undefined) {
+      updateData.displayName = profileData.displayName;
+    }
+    if (profileData.weightUnit !== undefined) {
+      updateData.weightUnit = profileData.weightUnit;
+    }
+    if (profileData.timezone !== undefined) {
+      updateData.timezone = profileData.timezone;
+    }
+
+    updateData.updatedAt = FieldValue.serverTimestamp();
+
+    await db.collection("users").doc(uid).update(updateData);
+
+    return {success: true, message: "Profile updated successfully."};
+  } catch (error) {
+    logger.error("Error updating user profile:", error);
+    throw new HttpsError("internal", "Failed to update user profile.");
+  }
+});
+
+export const getUserProfile = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "User profile not found.");
+    }
+
+    const userData = userDoc.data();
+    if (!userData) {
+      throw new HttpsError("not-found", "User data not found.");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const {hashedPassword, ...safeUserData} = userData;
+
+    return safeUserData;
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Error fetching user profile:", error);
+    throw new HttpsError("internal", "Failed to fetch user profile.");
+  }
+});
+
+// ==================== STATISTICS FUNCTIONS ====================
+
+export const getPersonalRecords = onCall(async (request) => {
+  initializeDb();
+
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "User not found.");
+    }
+
+    const userData = userDoc.data();
+    const personalRecords = userData?.stats?.personalRecords || {};
+
+    // Get recent workouts to calculate additional stats
+    const recentWorkoutsQuery = await db
+      .collection("userWorkouts")
+      .where("userId", "==", uid)
+      .where("status", "==", "completed")
+      .orderBy("dateCompleted", "desc")
+      .limit(50)
+      .get();
+
+    // Calculate additional statistics
+    const exerciseFrequency: { [key: string]: number } = {};
+    const volumeByExercise: { [key: string]: number } = {};
+
+    recentWorkoutsQuery.docs.forEach((doc) => {
+      const data = doc.data();
+      data.exercises.forEach((exercise: LoggedExercise) => {
+        const exerciseName = exercise.exerciseName;
+        exerciseFrequency[exerciseName] = (exerciseFrequency[exerciseName] || 0) + 1;
+
+        let exerciseVolume = 0;
+        exercise.performance.forEach((set: PerformanceSet) => {
+          if (set.completed && set.weight && set.reps) {
+            const weight = parseFloat(set.weight);
+            const reps = parseInt(set.reps);
+            exerciseVolume += weight * reps;
+          }
+        });
+        volumeByExercise[exerciseName] = (volumeByExercise[exerciseName] || 0) + exerciseVolume;
+      });
+    });
+
+    return {
+      personalRecords,
+      exerciseFrequency,
+      volumeByExercise,
+      totalWorkouts: recentWorkoutsQuery.size,
+    };
+  } catch (error) {
+    logger.error("Error fetching personal records:", error);
+    throw new HttpsError("internal", "Failed to fetch personal records.");
   }
 });

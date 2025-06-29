@@ -9,6 +9,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { CheckCircleIcon as CheckCircleOutline } from '@heroicons/react/24/outline';
 import PerformanceLogRow from './PerformanceLogRow';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 
 interface ActiveExerciseProps {
   exercise: DocumentData;
@@ -29,6 +30,9 @@ export default function ActiveExercise({
   onRemoveSet,
   showRemoveButton = true
 }: ActiveExerciseProps) {
+
+  const { getWeightUnitLabel } = useUserPreferences();
+  const weightUnit = getWeightUnitLabel();
   
   const isSetUnlocked = (setIndex: number): boolean => {
     if (setIndex === 0) {
@@ -59,7 +63,7 @@ export default function ActiveExercise({
         <p className="text-sm text-gray-500">
           Target: <span className="font-semibold">{exercise.sets} sets</span> of{' '}
           <span className="font-semibold">{exercise.reps} reps</span> @{' '}
-          <span className="font-semibold">{exercise.weight}</span>
+          <span className="font-semibold">{exercise.weight} {weightUnit}</span>
         </p>
       </div>
       
@@ -67,7 +71,7 @@ export default function ActiveExercise({
       <div className="space-y-3">
         <div className="grid items-center grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase">
           <div className="col-span-2 text-center">Set</div>
-          <div className="col-span-4">Weight (kg/lbs)</div>
+          <div className="col-span-4">Weight ({weightUnit})</div>
           <div className="col-span-4">Reps</div>
           <div className="col-span-2 text-center">Done</div>
         </div>

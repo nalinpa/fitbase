@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, dateFnsLocalizer, View, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay, startOfMonth, endOfMonth, addMonths } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { enAU, enCA, enGB, enIE, enIN, enNZ, enUS, enZA } from 'date-fns/locale';
 import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
 import CalendarToolbar from '../components/CalendarToolbar';
@@ -10,7 +10,7 @@ import PageHeader from '../components/ui/PageHeader';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import Spinner from '../components/ui/Spinner';
 
-const locales = { 'en-US': enUS };
+const locales = { 'en-US': enUS, 'en-CA': enCA, 'en-AU': enAU, 'en-GB': enGB, 'en-IE': enIE, 'en-IN': enIN, 'en-NZ': enNZ, 'en-ZA': enZA };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
 
 export default function CalendarViewPage() {

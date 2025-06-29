@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, DocumentData } from 'firebase/firestore';
+import { ArrowLeftIcon, PencilSquareIcon, LockClosedIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/solid';
+
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeftIcon, PencilSquareIcon, LockClosedIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import EditableWorkoutDays from '../components/EditWorkoutDay'; 
 import PlanDetailView from '../components/PlanDetailView';
 import PlanEditForm from '../components/PlanEditForm';

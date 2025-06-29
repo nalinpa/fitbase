@@ -19,10 +19,14 @@ import { Link } from 'react-router-dom';
 import { DocumentData } from 'firebase/firestore';
 import Spinner from '../components/ui/Spinner';
 import { cloudFunctionsService } from '../services/cloudFunctionsService';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 
 export default function DashboardPage() {
+  const { getUserName } = useUserPreferences();
   const { user } = useAuth();
   const navigate = useNavigate();
+  
+  const displayName = getUserName();
   
   const [userData, setUserData] = useState<DocumentData | null>(null);
   const [activePlan, setActivePlan] = useState<DocumentData | null>(null);
@@ -50,6 +54,7 @@ export default function DashboardPage() {
       const getDashboardData = httpsCallable(functions, 'getUserDashboardData');
       const result = await getDashboardData();
       const data = result.data as any;
+      console.log("!!!", data.nextWorkout);
       
       setUserData(data.userData);
       setActivePlan(data.activePlan);
@@ -68,6 +73,7 @@ export default function DashboardPage() {
 
     try {
       const startSession = httpsCallable(functions, 'startWorkoutSession');
+      console.log(dayIndex);
       const result = await startSession({ 
         planId: activePlan.id, 
         dayIndex 
@@ -111,7 +117,7 @@ export default function DashboardPage() {
       {/* Welcome Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-          Welcome back, {user?.displayName || user?.email?.split('@')[0]}!
+          Welcome back, {displayName}!
         </h1>
         <p className="mt-1 text-lg text-gray-600">
           {userData && userData?.stats?.currentStreak > 0 

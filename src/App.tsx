@@ -1,12 +1,12 @@
 import React from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
 
 import PublicLayout from './layout/public.layout';
 import UserRoute from './lib/UserRoute';
 import Auth from './components/Auth';
 import HomePage from './pages/HomePage';
-import DashboardPage from './pages/DashboardPage';
 import CreateWorkoutPage from './pages/CreateWorkoutPage';
 import PlanDetailPage from './pages/PlanDetailPage';
 import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
@@ -17,6 +17,8 @@ import CompletedWorkoutsListPage from './pages/CompletedWorkoutsListPage';
 import CompletedWorkoutDetailPage from './pages/CompletedWorkoutsDetailPage';
 import CalendarViewPage from './pages/CalendarViewPage';
 import ProgressDashboardPage from './pages/ProgressDashboardPage';
+import SettingsPage from './pages/SettingsPage';
+import { ToastConfig } from './components/ToastConfig';
 
 const router = createBrowserRouter([
   // --- Public Routes ---
@@ -42,7 +44,8 @@ const router = createBrowserRouter([
           { path: '/workout/:planId', element: <PlanDetailPage /> },
           { path: '/workout/history', element: <CompletedWorkoutsListPage /> },
           { path: '/workout/history/:sessionId', element: <CompletedWorkoutDetailPage /> },
-          { path: '/workout/calendar', element: <CalendarViewPage /> },       
+          { path: '/workout/calendar', element: <CalendarViewPage /> },  
+          { path: '/settings', element: <SettingsPage /> },            
         ]
       },
       // Group 2: Routes using the new full-screen layout
@@ -68,7 +71,12 @@ const router = createBrowserRouter([
     );
   }
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <ToastConfig />
+    </>
+  );
 }
 
 export default App;

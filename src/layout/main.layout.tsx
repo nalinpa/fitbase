@@ -10,6 +10,7 @@ import {
   FolderIcon,
   CalendarIcon,
   ArrowRightOnRectangleIcon,
+  Cog6ToothIcon,
   Bars3Icon,
   XMarkIcon,
   SparklesIcon
@@ -36,6 +37,7 @@ export default function Layout() {
     { label: 'History', icon: ChartBarIcon, to: '/workout/history' },
     { label: 'Calendar', icon: CalendarIcon, to: '/workout/calendar' },    
     { label: 'Create Workout', icon: SparklesIcon, to: '/workout/new' }, 
+    { label: 'Settings', icon: Cog6ToothIcon, to: '/settings' },
   ];
 
   const sidebarContent = (

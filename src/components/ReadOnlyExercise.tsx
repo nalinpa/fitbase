@@ -1,4 +1,5 @@
 import React from 'react';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 
 // Define the shape of the exercise data this component expects
 interface Exercise {
@@ -25,6 +26,8 @@ const formatRestTime = (seconds: number): string => {
 };
 
 export default function ReadOnlyExercise({ exercise }: ReadOnlyExerciseProps) {
+  const {getWeightUnitLabel} = useUserPreferences();
+  const weightUnit = getWeightUnitLabel();
   return (
     <div className="p-3 bg-white border rounded-md grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-1">
       <div className="col-span-2 md:col-span-4 lg:col-span-5 font-semibold text-gray-800">
@@ -37,7 +40,7 @@ export default function ReadOnlyExercise({ exercise }: ReadOnlyExerciseProps) {
         <span className="font-medium text-gray-500">Reps: </span>{exercise.reps}
       </div>
       <div className="text-sm">
-        <span className="font-medium text-gray-500">Weight: </span>{exercise.weight}
+        <span className="font-medium text-gray-500">Weight: </span>{exercise.weight}{weightUnit}
       </div>
       <div className="text-sm">
         <span className="font-medium text-gray-500">Rest: </span>{formatRestTime(exercise.restTime)}

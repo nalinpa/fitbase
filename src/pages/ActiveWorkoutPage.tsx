@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+
 import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../hooks/useConfirm';
 import { CheckCircleIcon as CheckCircleSolid, XMarkIcon, PlusIcon } from '@heroicons/react/24/solid';
 import RestTimerModal from '../components/RestTimerModal';
 import ActiveExercise from '../components/ActiveExercise';
@@ -39,6 +42,7 @@ export default function ActiveWorkoutPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { confirm } = useConfirm();
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,7 +115,7 @@ export default function ActiveWorkoutPage() {
       setSession(validatedSession);
     } catch (error: any) {
       console.error("Error fetching session:", error);
-      alert(error.message || "Failed to load workout session");
+      toast.error(error.message || "Failed to load workout session");
       navigate('/dashboard');
     } finally {
       setLoading(false);
@@ -201,10 +205,17 @@ export default function ActiveWorkoutPage() {
     saveExercisesUpdate(newExercises);
   };
 
-  const handleRemoveExercise = (exerciseIndex: number) => {
+  const handleRemoveExercise = async(exerciseIndex: number) => {
     if (!session || !session.exercises || exerciseIndex >= session.exercises.length) return;
+    const confirmed = await confirm({
+      title: 'Remove Exercise?',
+      message: 'Are you sure you want to remove this exercise from your workout?',
+      confirmText: 'Yes',
+      cancelText: 'Cancel',
+      confirmColor: 'red'
+    });
     
-    if (window.confirm('Are you sure you want to remove this exercise from your workout?')) {
+    if (confirmed) {
       const newExercises = session.exercises.filter((_, index) => index !== exerciseIndex);
       setSession({ ...session, exercises: newExercises });
       
@@ -266,13 +277,21 @@ export default function ActiveWorkoutPage() {
     saveExercisesUpdate(newExercises);
   };
 
-  const handleRemoveSet = (exerciseIndex: number, setIndex: number) => {
+  const handleRemoveSet = async(exerciseIndex: number, setIndex: number) => {
     if (!session || !session.exercises || exerciseIndex >= session.exercises.length) return;
     
     const exercise = session.exercises[exerciseIndex];
-    if (exercise.performance.length <= 1 || setIndex === 0) return; // Can't remove if only 1 set or first set
+    if (exercise.performance.length <= 1 || setIndex === 0) return; 
+  
+    const confirmed = await confirm({
+      title: 'Remove Set?',
+      message: 'Are you sure you want to remove this set?',
+      confirmText: 'Yes',
+      cancelText: 'Cancel',
+      confirmColor: 'red'
+    });
     
-    if (window.confirm('Are you sure you want to remove this set?')) {
+    if (confirmed) {
       const newExercises = session.exercises.map((ex, idx) => {
         if (idx === exerciseIndex) {
           return {
@@ -296,7 +315,7 @@ export default function ActiveWorkoutPage() {
       await cloudFunctionsService.updateWorkoutSession(session.id, exercises);
     } catch (error) {
       console.error("Error saving exercise changes:", error);
-      alert("Failed to save changes. Please try again.");
+      toast.error("Failed to save changes. Please try again.");
     }
   };
 
@@ -308,14 +327,23 @@ export default function ActiveWorkoutPage() {
       navigate('/dashboard');
     } catch (error: any) {
       console.error("Error finishing workout:", error);
-      alert(error.message || "Failed to finish workout");
+      toast.error(error.message || "Failed to finish workout");
       setSaving(false);
     }
   };
 
   const handleCancelWorkout = async () => {
     if (!sessionId) return;
-    if (window.confirm("Are you sure you want to cancel this workout? Your progress will be saved but the workout won't be marked as complete.")) {
+
+    const confirmed = await confirm({
+      title: 'Cancel Workout?',
+      message: 'Are you sure you want to cancel this workout? Your progress will be saved but the workout won\'t be marked as complete.',
+      confirmText: 'Yes, Cancel',
+      cancelText: 'Keep Going',
+      confirmColor: 'red'
+    });
+
+    if (confirmed) {
       try {
         await cloudFunctionsService.cancelWorkoutSession(sessionId);
         navigate('/dashboard');

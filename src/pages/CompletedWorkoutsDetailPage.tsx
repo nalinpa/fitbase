@@ -3,12 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { DocumentData } from 'firebase/firestore';
 import { cloudFunctionsService } from '../services/cloudFunctionsService';
 import { useAuth } from '../context/AuthContext';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 import { ArrowLeftIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/solid';
 
 export default function CompletedWorkoutDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { getWeightUnitLabel } = useUserPreferences();
+  const weightUnitLabel = getWeightUnitLabel();
 
   const [session, setSession] = useState<DocumentData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,7 +101,7 @@ export default function CompletedWorkoutDetailPage() {
                   <div key={setIndex} className="grid items-center grid-cols-4 gap-2 p-2 text-sm text-center bg-gray-50 rounded-md">
                     <div className="font-bold text-gray-800">{setIndex + 1}</div>
                     <div className="text-gray-600">{ex.reps}</div>
-                    <div className="font-semibold text-gray-800">{perf.weight || '--'}</div>
+                    <div className="font-semibold text-gray-800">{perf.weight || '--'}{weightUnitLabel}</div>
                     <div className="font-semibold text-gray-800">{perf.reps || '--'}</div>
                   </div>
                 ))}

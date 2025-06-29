@@ -21,7 +21,6 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 
 // Initialize services
 export const auth = getAuth(app);
@@ -40,5 +39,6 @@ export const createCallableFunction = <T = any, R = any>(functionName: string) =
   return httpsCallable<T, R>(functions, functionName);
 };
 
+export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 
 export default app;

@@ -7,7 +7,7 @@ import Button from './ui/Button';
 interface NextWorkoutCardProps {
   nextWorkout: {
     day: DocumentData;
-    index: number;
+    dayIndex: number;
   };
   onStartWorkout: (dayIndex: number) => void;
 }
@@ -19,7 +19,7 @@ export default function NextWorkoutCard({ nextWorkout, onStartWorkout }: NextWor
        <p className="mt-2 text-2xl font-bold">{nextWorkout.day.dayName}</p>
        <p className="mt-2 text-gray-300">{nextWorkout.day.exercises.length} exercises planned.</p>
           <Button 
-              onClick={() => onStartWorkout(nextWorkout.index)} 
+              onClick={() => onStartWorkout(nextWorkout.dayIndex)} 
               className="w-full justify-center py-3 mt-4 ..."
             >
               <PlayCircleIcon className="w-6 h-6"/>

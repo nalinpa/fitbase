@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
+import { User } from 'firebase/auth';
 export interface DashboardData {
   userData: any;
   activePlan: any;
@@ -58,6 +59,12 @@ export interface WorkoutSessionResponse {
   [key: string]: any;
 }
 
+export interface UserPreferences {
+  weightUnit: 'kg' | 'lbs';
+  timezone: string;
+  displayName: string;
+}
+
 // Cloud Functions Service Class
 class CloudFunctionsService {
   // ==================== AUTH FUNCTIONS ====================
@@ -88,10 +95,10 @@ class CloudFunctionsService {
     return result.data as DashboardData;
   }
 
-  async getUserProfile() {
+  async getUserProfile(): Promise<UserPreferences> {
     const getUserProfileFn = httpsCallable(functions, 'getUserProfile');
     const result = await getUserProfileFn();
-    return result.data;
+    return result.data as UserPreferences;
   }
 
   async updateUserProfile(profileData: any) {
@@ -141,6 +148,8 @@ class CloudFunctionsService {
   // ==================== WORKOUT SESSION FUNCTIONS ====================
   
   async startWorkoutSession(planId: string, dayIndex: number): Promise<SessionData> {
+    console.log('Service called with:', { planId, dayIndex, dayIndexType: typeof dayIndex });
+
     const startWorkoutSessionFn = httpsCallable(functions, 'startWorkoutSession');
     const result = await startWorkoutSessionFn({ planId, dayIndex });
     return result.data as SessionData;
